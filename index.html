@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartEditor Pro | AI Video Editor</title>
+    <title>SmartEditor Pro | AI Batch Processor</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -28,7 +28,7 @@
 
         .app-container {
             width: 100%;
-            max-width: 480px; /* Мобильный вид */
+            max-width: 500px;
             display: flex;
             flex-direction: column;
             gap: 20px;
@@ -39,7 +39,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-bottom: 20px;
+            padding-bottom: 15px;
             border-bottom: 1px solid #333;
         }
 
@@ -51,16 +51,31 @@
             -webkit-text-fill-color: transparent;
         }
 
-        .status-badge {
+        /* Блок настроек API */
+        .api-box {
+            background: #151525;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #333;
+        }
+        .api-box label {
             font-size: 12px;
-            background: rgba(132, 204, 22, 0.2);
-            color: var(--accent-green);
-            padding: 4px 10px;
-            border-radius: 20px;
-            border: 1px solid var(--accent-green);
+            color: var(--text-muted);
+            margin-bottom: 5px;
+            display: block;
+        }
+        .api-input {
+            width: 100%;
+            background: #0f0f1a;
+            border: 1px solid #444;
+            padding: 10px;
+            border-radius: 6px;
+            color: #fff;
+            font-family: monospace;
+            box-sizing: border-box;
         }
 
-        /* Карточка загрузки */
+        /* Основная карточка */
         .card {
             background-color: var(--card-bg);
             border-radius: 16px;
@@ -83,22 +98,23 @@
             background: rgba(217, 70, 239, 0.05);
         }
 
-        h3 { margin: 10px 0 5px; }
-        p { color: var(--text-muted); font-size: 13px; margin: 0; }
+        h3 { margin: 10px 0 5px; font-size: 18px; }
+        .sub-text { color: var(--text-muted); font-size: 13px; margin-bottom: 15px; display: block; }
 
+        /* Кнопка */
         .btn-action {
             background: var(--primary-gradient);
             color: white;
             border: none;
             width: 100%;
-            padding: 14px;
+            padding: 16px;
             border-radius: 10px;
             font-weight: 600;
-            font-size: 15px;
+            font-size: 16px;
             cursor: pointer;
             box-shadow: 0 4px 15px rgba(217, 70, 239, 0.3);
+            transition: 0.2s;
         }
-        
         .btn-action:disabled {
             background: #444;
             cursor: not-allowed;
@@ -106,6 +122,30 @@
         }
 
         #fileInput { display: none; }
+
+        /* Список файлов */
+        .file-list {
+            text-align: left;
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            border-top: 1px solid #333;
+            padding-top: 10px;
+        }
+        .file-item {
+            background: #252540;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 5px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-count {
+            color: var(--accent-green);
+            font-weight: bold;
+        }
 
         /* Лог */
         .log-area {
@@ -115,12 +155,14 @@
             font-family: monospace;
             font-size: 12px;
             color: #aaa;
-            height: 100px;
+            height: 180px;
             overflow-y: auto;
             text-align: left;
+            border: 1px solid #333;
         }
-        
         .log-success { color: var(--accent-green); }
+        .log-error { color: #ef4444; }
+        .log-ai { color: #d946ef; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -128,24 +170,38 @@
 <div class="app-container">
     <div class="header">
         <div class="brand">SmartEditor <span style="font-size: 10px; opacity: 0.7; font-weight: 400;">PRO</span></div>
-        <div class="status-badge">● Online</div>
+        <div style="font-size: 10px; color: #666;">BATCH MODE</div>
     </div>
 
+    <!-- 1. Блок для API Ключа -->
+    <div class="api-box">
+        <label>🔑 Вставь сюда свой ключ от Google AI (нужен для работы ИИ):</label>
+        <input type="text" id="apiKey" class="api-input" placeholder="AIzaSy... (начинается на AIza...)">
+    </div>
+
+    <!-- 2. Блок загрузки -->
     <div class="card">
         <div class="upload-area" onclick="document.getElementById('fileInput').click()">
             <div style="font-size: 30px;">📂</div>
-            <h3>Загрузить видео</h3>
-            <p>Нажми, чтобы выбрать файл из галереи</p>
+            <h3>Загрузить файлы</h3>
+            <span class="sub-text">Можно выбрать несколько видео/фото сразу</span>
         </div>
-        <input type="file" id="fileInput" accept="video/*">
         
-        <button id="processBtn" class="btn-action" disabled onclick="startProcess()">
-            Автоматически смонтировать
+        <!-- Атрибут multiple позволяет выбрать несколько файлов -->
+        <input type="file" id="fileInput" accept="video/*, image/*" multiple>
+        
+        <div id="fileListContainer" style="display:none;">
+            <p class="sub-text">Выбрано файлов: <span id="fileCount" class="file-count">0</span></p>
+            <div class="file-list" id="fileList"></div>
+        </div>
+        <br>
+        <button id="processBtn" class="btn-action" disabled onclick="processBatch()">
+            🧠 Анализировать всё
         </button>
     </div>
 
     <div class="log-area" id="logs">
-        > Система готова к работе...
+        > Система готова. Введите API ключ и загрузите файлы...
     </div>
 </div>
 
@@ -153,42 +209,125 @@
     const fileInput = document.getElementById('fileInput');
     const processBtn = document.getElementById('processBtn');
     const logs = document.getElementById('logs');
+    const apiKeyInput = document.getElementById('apiKey');
+    const fileListContainer = document.getElementById('fileListContainer');
+    const fileListDiv = document.getElementById('fileList');
+    const fileCountSpan = document.getElementById('fileCount');
 
+    // Событие при выборе файлов
     fileInput.addEventListener('change', function() {
-        if (this.files && this.files[0]) {
-            const fileName = this.files[0].name;
+        const files = this.files; // Теперь это массив файлов
+        fileListDiv.innerHTML = ''; // Очищаем список
+        
+        if (files.length > 0) {
+            fileListContainer.style.display = 'block';
             processBtn.disabled = false;
-            addLog(`✅ Файл выбран: ${fileName}`);
-            addLog(`📊 Размер: ${(this.files[0].size / 1024 / 1024).toFixed(2)} MB`);
+            fileCountSpan.innerText = files.length;
+            
+            // Выводим список выбранных файлов
+            for (let i = 0; i < files.length; i++) {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                // Сокращаем имя файла, если оно слишком длинное
+                let name = files[i].name;
+                if(name.length > 30) name = name.substring(0, 15) + '...';
+                
+                item.innerHTML = `<span>📄 ${name}</span> <span>${(files[i].size / 1024 / 1024).toFixed(1)} MB</span>`;
+                fileListDiv.appendChild(item);
+            }
+            addLog(`✅ Загружено пакетом: ${files.length} файлов.`);
+        } else {
+            fileListContainer.style.display = 'none';
+            processBtn.disabled = true;
         }
     });
 
-    function addLog(text) {
+    function addLog(text, type = '') {
         const p = document.createElement('div');
         p.innerText = '> ' + text;
-        if(text.includes('✅')) p.className = 'log-success';
+        if (type) p.className = type;
         logs.appendChild(p);
         logs.scrollTop = logs.scrollHeight;
     }
 
-    function startProcess() {
-        addLog('🚀 Запуск анализа нейросетью...');
-        processBtn.disabled = true;
-        processBtn.innerText = "Обработка...";
-        
-        setTimeout(() => {
-            addLog('🧠 ИИ: Нашел 3 лучших момента...');
-        }, 2000);
+    // Конвертация файла в Base64 (для отправки в ИИ)
+    function toBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Отправляем только данные
+            reader.onerror = error => reject(error);
+        });
+    }
 
-        setTimeout(() => {
-            addLog('🎬 Генерация итогового ролика...');
-        }, 4000);
+    // Функция обработки ПАРТИЕЙ (Batch Processing)
+    async function processBatch() {
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+            addLog("❌ ОШИБКА: Введите API ключ в поле сверху!", "log-error");
+            return;
+        }
+
+        const files = fileInput.files;
+        processBtn.disabled = true;
+        processBtn.innerText = "⏳ ИИ думает...";
         
-        setTimeout(() => {
-            addLog('✅ ГОТОВО! (Логика пока не подключена)');
-            processBtn.innerText = "Готово!";
-            processBtn.style.background = "var(--accent-green)";
-        }, 6000);
+        addLog(`🚀 Начинаем обработку очереди из ${files.length} файлов...`);
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            addLog(`🔄 Обработка #${i+1}: ${file.name}...`);
+
+            try {
+                // 1. Готовим данные (Base64)
+                const base64Data = await toBase64(file);
+
+                // 2. Формируем запрос к Gemini
+                // Мы просим его кратко проанализировать кадр
+                const prompt = `Анализируй этот файл. Верни результат ТОЛЬКО в формате JSON. Найди настроение и ключевые моменты. Пример: { "mood": "веселое", "action": "танцы", "best_frames_start": 2.5, "best_frames_end": 5.0 }`;
+                
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=${apiKey}`;
+                
+                const requestBody = {
+                    contents: [{
+                        parts: [
+                            { inline_data: { mime_type: file.type, data: base64Data } },
+                            { text: prompt }
+                        ]
+                    }]
+                };
+
+                // 3. Отправляем запрос (с таймаутом 20 секунд, чтобы браузер не завис)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+                const response = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error("Сервер ИИ не ответил");
+
+                const data = await response.json();
+                const aiResult = data.candidates[0].content.parts[0].text;
+                
+                addLog(`✅ Файл #${i+1} готов:`, "log-success");
+                addLog(aiResult, "log-ai");
+
+                // Небольшая пауза перед следующим файлом, чтобы не перегрузить лимиты
+                await new Promise(r => setTimeout(r, 2000)); 
+
+            } catch (error) {
+                addLog(`❌ Ошибка с файлом #${i+1}: ${error.message}`, "log-error");
+            }
+        }
+
+        addLog("🏁 Вся очередь обработана!", "log-success");
+        processBtn.innerText = "Готово!";
+        processBtn.disabled = false;
     }
 </script>
 
