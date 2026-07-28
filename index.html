@@ -3,8 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartEditor Pro | Local AI</title>
+    <title>SmartEditor Pro | AI Video Editor</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Подключаем библиотеки -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    
     <style>
         :root {
             --bg-color: #0f0f1a;
@@ -112,31 +117,64 @@
         .log-error { color: #ef4444; }
         .log-ai { color: #d946ef; font-weight: bold; }
         .log-process { color: #3b82f6; }
+
+        /* Блок результата */
+        .result-box {
+            display: none;
+            background: #252540;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid var(--accent-green);
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 12px 24px;
+            background: var(--accent-green);
+            color: #000;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        .download-link:hover { transform: scale(1.05); }
     </style>
 </head>
 <body>
 
 <div class="app-container">
     <div class="header">
-        <div class="brand">SmartEditor <span style="font-size: 10px; opacity: 0.7;">LOCAL AI</span></div>
+        <div class="brand">SmartEditor <span style="font-size: 10px; opacity: 0.7;">PRO</span></div>
     </div>
 
     <div class="status-box">
-        🔒 <b>Локальный режим:</b> Нейросеть работает внутри браузера. Ключи не нужны. Данные никуда не отправляются.
+        🔒 <b>Локальный режим:</b> Монтаж происходит прямо в твоем браузере. Данные никуда не отправляются.
     </div>
 
     <div class="card">
         <div class="upload-area" onclick="document.getElementById('fileInput').click()">
             <div style="font-size: 30px;">📂</div>
             <h3>Загрузить видео</h3>
-            <span class="sub-text">Будем искать лица и эмоции</span>
+            <span class="sub-text">Автоматический монтаж лучших моментов</span>
         </div>
         
         <input type="file" id="fileInput" accept="video/*">
         <br>
-        <button id="processBtn" class="btn-action" disabled onclick="analyzeLocal()">
-            🧠 Анализировать
+        <button id="processBtn" class="btn-action" disabled onclick="startFullProcess()">
+            🧠 Анализировать и Смонтировать
         </button>
+    </div>
+
+    <!-- Блок с результатом -->
+    <div id="resultBox" class="result-box">
+        <h3>🎬 Ролик готов!</h3>
+        <p class="sub-text">Нажми ниже, чтобы скачать</p>
+        <a id="downloadLink" class="download-link" download="smart_edit.mp4">Скачать MP4</a>
     </div>
 
     <div class="log-area" id="logs">
@@ -144,37 +182,34 @@
     </div>
 </div>
 
-<!-- Скрытые элементы -->
 <video id="hiddenVideo" muted playsinline crossorigin="anonymous"></video>
 
-<!-- Используем стабильную версию библиотеки -->
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
 <script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    let ffmpeg = null;
+
     const fileInput = document.getElementById('fileInput');
     const processBtn = document.getElementById('processBtn');
     const logs = document.getElementById('logs');
     const videoPlayer = document.getElementById('hiddenVideo');
+    const resultBox = document.getElementById('resultBox');
+    const downloadLink = document.getElementById('downloadLink');
 
-    // 🔥 НОВЫЙ НАДЕЖНЫЙ CDN ДЛЯ МОДЕЛЕЙ
+    // === ЭТАП 0: ЗАГРУЗКА МОДЕЛЕЙ ===
     const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/';
+    
+    addLog("🔄 Загрузка нейросетей...", "log-process");
 
-    addLog("🔄 Скачиваем нейросети (CDN jsDelivr)...", "log-process");
-
-    // Загружаем модели
     Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
         faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-        faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
     ]).then(() => {
-        addLog("✅ УСПЕХ! Нейросети загружены и готовы к работе.", "log-success");
+        addLog("✅ Нейросети загружены.", "log-success");
         fileInput.disabled = false; 
     }).catch(err => {
-        addLog("❌ Ошибка загрузки: " + err, "log-error");
-        addLog("💡 Если ошибка повторится, отключите AdBlock/расширения конфиденциальности и обновите страницу (Ctrl+F5)", "log-error");
+        addLog("❌ Ошибка загрузки моделей: " + err, "log-error");
     });
 
-    // Отображение списка файлов
     fileInput.addEventListener('change', function() {
         if (this.files.length > 0) {
             processBtn.disabled = false;
@@ -190,65 +225,115 @@
         logs.scrollTop = logs.scrollHeight;
     }
 
-    // === АНАЛИЗ В БРАУЗЕРЕ ===
-    async function analyzeLocal() {
+    async function startFullProcess() {
         processBtn.disabled = true;
-        processBtn.innerText = "🧠 Думаю...";
-        
+        processBtn.innerText = "⏳ ИИ думает...";
+        resultBox.style.display = 'none';
+
         const file = fileInput.files[0];
         const url = URL.createObjectURL(file);
         videoPlayer.src = url;
 
-        // Ждем загрузки метаданных
         await new Promise(r => videoPlayer.onloadedmetadata = r);
-        
         const duration = videoPlayer.duration;
-        // Проверяем 3 момента: 1 сек, середина, конец
-        const timePoints = [1, duration/2, duration-2].filter(t => t > 1 && t < duration);
-        
-        addLog(`🎬 Сканируем ${timePoints.length} ключевых моментов...`, "log-process");
 
-        for (let time of timePoints) {
-            videoPlayer.currentTime = time;
-            // Ждем перемотки
+        // === ЭТАП 1: АНАЛИЗ ЭМОЦИЙ ===
+        addLog("🔍 1. Ищем лучшие моменты...", "log-process");
+        let bestSegments = [];
+
+        // Сканируем видео каждые 2 секунды
+        for (let t = 0; t < duration; t += 2) {
+            videoPlayer.currentTime = t;
             await new Promise(r => videoPlayer.onseeked = r);
 
-            // Анализируем кадр
             const detection = await faceapi.detectAllFaces(videoPlayer, new faceapi.TinyFaceDetectorOptions())
                 .withFaceExpressions();
 
             if (detection.length > 0) {
-                addLog(`📸 Кадр ${time.toFixed(1)}с: Лицо найдено!`, "log-success");
+                const emotions = detection[0].expressions;
+                // Находим самую сильную эмоцию
+                const strongest = Object.keys(emotions).sort((a,b) => emotions[b] - emotions[a])[0];
                 
-                detection.forEach(det => {
-                    // Находим самую сильную эмоцию
-                    const emotions = det.expressions;
-                    const strongestEmotion = Object.keys(emotions).sort((a, b) => emotions[b] - emotions[a])[0];
-                    const percentage = Math.round(emotions[strongestEmotion] * 100);
-
-                    addLog(`   🎭 Эмоция: ${translateEmotion(strongestEmotion)} (${percentage}%)`, "log-ai");
-
-                    if (strongestEmotion === 'happy' && percentage > 70) {
-                        addLog(`   🔥 РАЗЫСКО! (Смех/Радость)`, "log-success");
-                    }
-                });
-            } else {
-                addLog(`⚪ Кадр ${time.toFixed(1)}с: Лиц не обнаружено.`, "log-process");
+                // Если эмоция яркая (>60%), помечаем этот момент
+                if (emotions[strongest] > 0.6) {
+                    bestSegments.push({ start: t, end: t + 2, emotion: strongest, score: emotions[strongest] });
+                    addLog(`✨ Найдено: ${t.toFixed(1)}с (${translateEmotion(strongest)})`, "log-success");
+                }
             }
-            await new Promise(r => setTimeout(r, 500)); // Пауза для стабильности
         }
 
-        addLog("✅ Сканирование завершено!", "log-success");
-        processBtn.innerText = "Готово!";
-        processBtn.disabled = false;
+        if (bestSegments.length === 0) {
+            addLog("⚠️ Ярких эмоций не найдено. Возьмем начало и конец видео.", "log-process");
+            bestSegments = [{ start: 0, end: 3 }, { start: Math.max(3, duration - 3), end: duration }];
+        }
+
+        // === ЭТАП 2: МОНТАЖ ЧЕРЕЗ FFMPEG ===
+        addLog("🎬 2. Запускаем движок монтажа (FFmpeg)...", "log-process");
         
-        URL.revokeObjectURL(url);
+        try {
+            if (!ffmpeg) {
+                ffmpeg = createFFmpeg({ log: true });
+                await ffmpeg.load();
+                addLog("✅ FFmpeg готов!", "log-success");
+            }
+
+            // Записываем файл во внутреннюю память FFmpeg
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
+
+            // Генерируем команды для склейки
+            let inputs = '';
+            let filterComplex = '';
+            
+            // Создаем временные файлы для каждого куска
+            for (let i = 0; i < bestSegments.length; i++) {
+                const seg = bestSegments[i];
+                const outName = `seg${i}.mp4`;
+                
+                // Команда обрезки (вырезаем кусок из исходника)
+                await ffmpeg.run('-i', 'input.mp4', '-ss', `${seg.start}`, '-to', `${seg.end}`, '-c', 'copy', outName);
+                
+                inputs += `-i ${outName} `;
+            }
+
+            // Формируем фильтр склейки (concat)
+            // n=количество фрагментов
+            filterComplex = `concat=n=${bestSegments.length}:v=1:a=1[outv][outa]`;
+
+            addLog("🔗 3. Склеиваем фрагменты...", "log-process");
+
+            // Склеиваем всё в output.mp4
+            // Важно: используем spread operator (...) для передачи аргументов
+            await ffmpeg.run(...inputs.split(' '), '-filter_complex', filterComplex, '-map', '[outv]', '-map', '[outa]', 'output.mp4');
+
+            // === ЭТАП 3: ВЫДАЧА РЕЗУЛЬТАТА ===
+            addLog("🎉 4. Готово! Формируем ссылку...", "log-success");
+
+            const data = ffmpeg.FS('readFile', 'output.mp4');
+            
+            // Создаем Blob URL для скачивания
+            const blob = new Blob([data.buffer], { type: 'video/mp4' });
+            const videoUrl = URL.createObjectURL(blob);
+
+            downloadLink.href = videoUrl;
+            resultBox.style.display = 'block';
+            
+            processBtn.innerText = "Готово!";
+            processBtn.disabled = false;
+            
+            URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error(error);
+            addLog("❌ Ошибка при монтаже: " + error.message, "log-error");
+            processBtn.innerText = "Попробовать снова";
+            processBtn.disabled = false;
+        }
     }
 
     function translateEmotion(en) {
         const dict = {
             'neutral': 'Нейтрально',
-            'happiness': 'Радость/Смех',
+            'happiness': 'Радость',
             'sadness': 'Грусть',
             'anger': 'Злость',
             'fear': 'Страх',
