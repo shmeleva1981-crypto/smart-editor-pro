@@ -96,7 +96,6 @@
 
         #fileInput { display: none; }
         #hiddenVideo { display: none; }
-        #previewCanvas { display: none; }
 
         .log-area {
             background: #111;
@@ -123,7 +122,7 @@
     </div>
 
     <div class="status-box">
-        🔒 <b>Локальный режим:</b> Нейросеть работает внутри твоего браузера. Ключи не нужны. Данные никуда не отправляются.
+        🔒 <b>Локальный режим:</b> Нейросеть работает внутри браузера. Ключи не нужны.
     </div>
 
     <div class="card">
@@ -136,7 +135,7 @@
         <input type="file" id="fileInput" accept="video/*">
         <br>
         <button id="processBtn" class="btn-action" disabled onclick="analyzeLocal()">
-            🧠 Анализировать (Локально)
+            🧠 Анализировать
         </button>
     </div>
 
@@ -145,35 +144,34 @@
     </div>
 </div>
 
-<!-- Скрытые элементы для обработки -->
+<!-- Скрытые элементы -->
 <video id="hiddenVideo" muted playsinline crossorigin="anonymous"></video>
-<canvas id="previewCanvas"></canvas>
 
-<!-- Подключаем библиотеку Face-API.js прямо из браузера -->
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.js"></script>
+<!-- Подключаем обновленную библиотеку -->
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.min.js"></script>
 
 <script>
     const fileInput = document.getElementById('fileInput');
     const processBtn = document.getElementById('processBtn');
     const logs = document.getElementById('logs');
     const videoPlayer = document.getElementById('hiddenVideo');
-    const canvas = document.getElementById('previewCanvas');
 
-    // 1. Загрузка "Мозгов" (Моделей) при старте страницы
-    const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-    
-    addLog("🔄 Загрузка нейросетей (первый раз это занимает время)...", "log-process");
+    // 1. НОВАЯ ССЫЛКА НА МОДЕЛИ (она рабочая)
+    const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/weights';
 
+    addLog("🔄 Скачиваем нейросети (это может занять 30 сек)...", "log-process");
+
+    // Загружаем модели
     Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
         faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
         faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
     ]).then(() => {
-        addLog("✅ Нейросети загружены! Мозги готовы к работе.", "log-success");
-        // Включаем кнопку выбора файла, когда модели готовы
-        fileInput.disabled = false; 
+        addLog("✅ УСПЕХ! Нейросети загружены и готовы.", "log-success");
+        fileInput.disabled = false; // Разблокируем кнопку
     }).catch(err => {
-        addLog("❌ Ошибка загрузки моделей: " + err, "log-error");
+        addLog("❌ Ошибка загрузки: " + err, "log-error");
+        addLog("Попробуйте обновить страницу (Ctrl+F5)", "log-error");
     });
 
     // Отображение списка файлов
@@ -201,65 +199,56 @@
         const url = URL.createObjectURL(file);
         videoPlayer.src = url;
 
-        // Ждем, пока видео загрузится
+        // Ждем загрузки метаданных
         await new Promise(r => videoPlayer.onloadedmetadata = r);
         
         const duration = videoPlayer.duration;
-        // Выбираем кадры для анализа (начало, середина, конец)
-        const timePoints = [1, duration/2, duration-1].filter(t => t > 0 && t < duration);
+        // Проверяем 3 момента: 1 сек, середина, конец
+        const timePoints = [1, duration/2, duration-2].filter(t => t > 1 && t < duration);
         
-        addLog(`🎬 Начинаем сканирование ${timePoints.length} ключевых моментов...`, "log-process");
-
-        let happyCount = 0;
+        addLog(`🎬 Сканируем ${timePoints.length} моментов...`, "log-process");
 
         for (let time of timePoints) {
-            // Перемотка
             videoPlayer.currentTime = time;
+            // Ждем перемотки
             await new Promise(r => videoPlayer.onseeked = r);
 
-            // Анализ кадра
-            // detectAllFaces с опциями для экономии ресурсов
+            // Анализируем кадр
             const detection = await faceapi.detectAllFaces(videoPlayer, new faceapi.TinyFaceDetectorOptions())
-                .withFaceExpressions()
-                .withAgeAndGender();
+                .withFaceExpressions();
 
             if (detection.length > 0) {
-                addLog(`📸 В момент ${time.toFixed(1)}с найдены лица!`, "log-success");
+                addLog(`📸 Кадр ${time.toFixed(1)}с: Лицо найдено!`, "log-success");
                 
                 detection.forEach(det => {
                     // Находим самую сильную эмоцию
                     const emotions = det.expressions;
-                    // Сортируем эмоции по силе проявления
                     const strongestEmotion = Object.keys(emotions).sort((a, b) => emotions[b] - emotions[a])[0];
                     const percentage = Math.round(emotions[strongestEmotion] * 100);
 
-                    addLog(`👤 Эмоция: ${translateEmotion(strongestEmotion)} (${percentage}%)`, "log-ai");
+                    addLog(`   🎭 Эмоция: ${translateEmotion(strongestEmotion)} (${percentage}%)`, "log-ai");
 
                     if (strongestEmotion === 'happy' && percentage > 70) {
-                        happyCount++;
-                        addLog(`🔥 НАЙДЕН СМЕХ/РАДОСТЬ!`, "log-success");
+                        addLog(`   🔥 РАЗЫСКО! (Смех/Радость)`, "log-success");
                     }
                 });
             } else {
-                addLog(`⚪ В момент ${time.toFixed(1)}с лиц не найдено.`, "log-process");
+                addLog(`⚪ Кадр ${time.toFixed(1)}с: Лиц нет.`, "log-process");
             }
-            
-            // Небольшая пауза для плавности
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 500)); // Пауза
         }
 
-        addLog("✅ Сканирование завершено!", "log-success");
+        addLog("✅ Готово!", "log-success");
         processBtn.innerText = "Готово!";
         processBtn.disabled = false;
         
         URL.revokeObjectURL(url);
     }
 
-    // Перевод эмоций для удобства
     function translateEmotion(en) {
         const dict = {
             'neutral': 'Нейтрально',
-            'happiness': 'Радость/Смех',
+            'happiness': 'Радость',
             'sadness': 'Грусть',
             'anger': 'Злость',
             'fear': 'Страх',
