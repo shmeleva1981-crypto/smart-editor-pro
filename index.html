@@ -3,24 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SmartEditor Mobile | AI Clips</title>
+    <title>SmartEditor Pro | Mobile AI</title>
     <!-- Шрифты -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     
-    <!-- Библиотеки (Стабильные версии для мобильных) -->
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- JSZip для скачивания папкой -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <!-- FFmpeg (Версия без SharedArrayBuffer для работы в браузере) -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    
+    <!-- Face API -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
     <style>
         :root {
             --bg: #09090b;
             --card: #18181b;
-            --primary: #a855f7; /* Фиолетовый неон */
-            --accent: #22c55e; /* Зеленый успех */
-            --text: #ffffff;
-            --text-sec: #a1a1aa;
+            --primary: #d946ef;
+            --secondary: #8b5cf6;
+            --text: #f4f4f5;
+            --text-dim: #a1a1aa;
+            --success: #22c55e;
         }
 
         body {
@@ -47,15 +52,26 @@
             text-align: center;
             margin-bottom: 10px;
         }
-        h1 { margin: 0; font-size: 24px; background: linear-gradient(to right, #d8b4fe, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        p.subtitle { color: var(--text-sec); font-size: 14px; margin-top: 5px; }
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            margin: 0;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p.subtitle {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-top: 5px;
+        }
 
         .card {
             background: var(--card);
             border-radius: 16px;
             padding: 20px;
             border: 1px solid #27272a;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
 
         /* Настройки формата */
@@ -68,161 +84,191 @@
             flex: 1;
             padding: 10px;
             background: #27272a;
-            border: none;
+            border: 1px solid #3f3f46;
+            color: var(--text-dim);
             border-radius: 8px;
-            color: var(--text-sec);
             cursor: pointer;
+            font-size: 13px;
             font-weight: 600;
+            transition: 0.2s;
         }
         .format-btn.active {
             background: var(--primary);
             color: white;
-            box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+            border-color: var(--primary);
         }
 
         /* Загрузка */
-        .drop-zone {
+        .upload-zone {
             border: 2px dashed #3f3f46;
             border-radius: 12px;
-            padding: 30px 20px;
+            padding: 30px 10px;
             text-align: center;
             cursor: pointer;
-            transition: 0.2s;
+            transition: 0.3s;
+            position: relative;
         }
-        .drop-zone.active { border-color: var(--primary); background: rgba(168, 85, 247, 0.1); }
-        .icon-upload { font-size: 30px; margin-bottom: 10px; display: block; }
-
-        /* Логи */
-        .log-box {
-            background: #000;
-            border-radius: 8px;
-            padding: 10px;
-            height: 150px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 12px;
-            color: #ccc;
-            border: 1px solid #333;
+        .upload-zone:hover {
+            border-color: var(--primary);
+            background: rgba(217, 70, 239, 0.05);
         }
-        .log-item { margin-bottom: 4px; }
-        .log-ok { color: var(--accent); }
-        .log-warn { color: #eab308; }
+        .upload-icon { font-size: 30px; margin-bottom: 10px; display: block; }
+        .upload-text { font-size: 14px; color: var(--text-dim); }
+        #fileInput { display: none; }
 
-        /* Кнопки */
+        /* Кнопка действия */
         .btn-main {
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
             width: 100%;
             padding: 16px;
             border-radius: 12px;
-            border: none;
-            background: linear-gradient(90deg, #a855f7, #ec4899);
-            color: white;
             font-size: 16px;
             font-weight: 700;
             cursor: pointer;
             opacity: 0.5;
             pointer-events: none;
             transition: 0.3s;
+            box-shadow: 0 4px 15px rgba(217, 70, 239, 0.2);
         }
-        .btn-main.ready { opacity: 1; pointer-events: all; }
+        .btn-main.ready {
+            opacity: 1;
+            pointer-events: all;
+        }
         .btn-main:active { transform: scale(0.98); }
 
-        /* Результаты */
-        .clips-list {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        .clip-item {
-            background: #27272a;
+        /* Логи */
+        .log-window {
+            background: #000;
             border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-        }
-        .clip-item video { width: 100%; height: auto; display: block; }
-        .clip-info {
-            padding: 8px;
+            padding: 10px;
+            height: 150px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
             font-size: 11px;
-            text-align: center;
-            background: rgba(0,0,0,0.8);
-            position: absolute;
-            bottom: 0;
-            width: 100%;
+            color: #ccc;
+            border: 1px solid #333;
         }
-        
-        .download-all-btn {
-            margin-top: 20px;
-            background: var(--accent);
-            color: #000;
-            display: none; /* Скрыта пока нет клипов */
+        .log-entry { margin-bottom: 4px; }
+        .log-info { color: #60a5fa; }
+        .log-warn { color: #fbbf24; }
+        .log-success { color: var(--success); font-weight: bold; }
+        .log-error { color: #ef4444; }
+
+        /* Результат */
+        .result-area {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            animation: slideUp 0.4s ease;
+        }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .video-preview {
+            width: 100%;
+            border-radius: 8px;
+            background: #000;
+            max-height: 300px;
         }
 
-        /* Скрытые элементы */
-        #videoSource, #canvasProcess { display: none; }
+        .btn-download {
+            background: #27272a;
+            color: white;
+            border: 1px solid #3f3f46;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            display: block;
+        }
+        .btn-download.zip {
+            background: var(--success);
+            border-color: var(--success);
+            color: #000;
+        }
+
+        /* Скрытые элементы для обработки */
+        #hiddenCanvas { display: none; }
+        #hiddenVideo { display: none; }
         
         .loader {
-            border: 3px solid #333;
-            border-top: 3px solid var(--primary);
-            border-radius: 50%;
+            display: none;
             width: 20px;
             height: 20px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-            vertical-align: middle;
-            margin-right: 10px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <h1>SmartEditor Mobile</h1>
-        <p class="subtitle">AI Нарезка длинных видео на клипы</p>
+        <h1>SmartEditor Pro</h1>
+        <p class="subtitle">AI Нарезка длинных видео (Client-Side)</p>
     </header>
 
     <!-- Настройки -->
     <div class="card">
-        <label style="font-size: 12px; color: var(--text-sec); display:block; margin-bottom:8px;">Формат выхода:</label>
+        <label style="font-size: 12px; color: var(--text-dim); display:block; margin-bottom: 8px;">Формат выхода:</label>
         <div class="format-selector">
-            <button class="format-btn active" onclick="setFormat('vertical')" id="btnVert">📱 Вертикальный (9:16)</button>
-            <button class="format-btn" onclick="setFormat('horizontal')" id="btnHoriz">🖥 Горизонтальный (16:9)</button>
+            <div class="format-btn active" onclick="setFormat('vertical')" id="btn-vertical">📱 Вертикальный (9:16)</div>
+            <div class="format-btn" onclick="setFormat('horizontal')" id="btn-horizontal">🖥 Горизонтальный (16:9)</div>
         </div>
-        
-        <div class="drop-zone" id="dropZone">
-            <span class="icon-upload">📁</span>
-            <div>Нажми, чтобы выбрать видео</div>
-            <div style="font-size: 11px; color: #666; margin-top: 5px;">Поддерживаются длинные видео (MP4, MOV)</div>
-        </div>
-        <input type="file" id="fileInput" accept="video/*" style="display:none">
     </div>
 
-    <!-- Статус -->
-    <div class="card" id="statusCard" style="display:none;">
-        <div class="log-box" id="logBox"></div>
-        <button class="btn-main" id="processBtn" style="margin-top: 15px;">
-            ✂️ Начать умную нарезку
-        </button>
+    <!-- Загрузка -->
+    <div class="card">
+        <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+            <span class="upload-icon">📁</span>
+            <span class="upload-text" id="fileName">Нажмите, чтобы выбрать видео</span>
+            <input type="file" id="fileInput" accept="video/*">
+        </div>
+    </div>
+
+    <!-- Кнопка старта -->
+    <button class="btn-main" id="startBtn" onclick="startProcess()">
+        <span class="btn-text">🚀 Начать умный монтаж</span>
+        <div class="loader" id="btnLoader"></div>
+    </button>
+
+    <!-- Логи -->
+    <div class="log-window" id="logWindow">
+        <div class="log-entry log-info">Система готова. Ожидание видео...</div>
     </div>
 
     <!-- Результат -->
-    <div class="card" id="resultCard" style="display:none;">
-        <h3 style="margin:0 0 10px 0;">Готовые клипы:</h3>
-        <div class="clips-list" id="clipsList"></div>
-        <button class="btn-main download-all-btn" id="downloadZipBtn" style="display:block;">
-            📦 Скачать всё (ZIP архив)
-        </button>
+    <div class="result-area" id="resultArea">
+        <div class="card">
+            <h3 style="margin-top:0">Готово!</h3>
+            <p style="font-size:12px; color:var(--text-dim)">Найдено лучших моментов: <span id="clipCount" style="color:white; font-weight:bold">0</span></p>
+            
+            <!-- Превью первого клипа -->
+            <video id="previewVideo" controls class="video-preview"></video>
+            
+            <div style="margin-top: 15px; display:flex; flex-direction:column; gap:10px;">
+                <a id="downloadZipBtn" class="btn-download zip">📦 Скачать все клипы (ZIP)</a>
+                <a id="downloadSingleBtn" class="btn-download">💾 Скачать первый клип (MP4)</a>
+            </div>
+        </div>
     </div>
 </div>
 
-<!-- Скрытые элементы для обработки -->
-<video id="videoSource" playsinline crossorigin="anonymous"></video>
-<canvas id="canvasProcess"></canvas>
+<video id="hiddenVideo" muted playsinline></video>
+<canvas id="hiddenCanvas"></canvas>
 
 <script>
     const { createFFmpeg, fetchFile } = FFmpeg;
-    // Инициализация FFmpeg с настройками для совместимости
+    
+    // Инициализация FFmpeg (без SharedArrayBuffer)
     const ffmpeg = createFFmpeg({ 
         log: true,
         corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
@@ -230,286 +276,219 @@
 
     let selectedFile = null;
     let outputFormat = 'vertical'; // vertical или horizontal
-    let generatedClips = []; // Хранилище для_blob файлов
-
-    // Элементы UI
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const statusCard = document.getElementById('statusCard');
-    const processBtn = document.getElementById('processBtn');
-    const logBox = document.getElementById('logBox');
-    const resultCard = document.getElementById('resultCard');
-    const clipsList = document.getElementById('clipsList');
-    const downloadZipBtn = document.getElementById('downloadZipBtn');
-    const videoEl = document.getElementById('videoSource');
-    const canvas = document.getElementById('canvasProcess');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let generatedClips = []; // Хранилище бинарных данных клипов
 
     // --- Логирование ---
     function log(msg, type = 'info') {
+        const win = document.getElementById('logWindow');
         const div = document.createElement('div');
-        div.className = 'log-item';
-        if (type === 'ok') div.classList.add('log-ok');
-        if (type === 'warn') div.classList.add('log-warn');
+        div.className = `log-entry log-${type}`;
         div.innerText = `> ${msg}`;
-        logBox.appendChild(div);
-        logBox.scrollTop = logBox.scrollHeight;
+        win.appendChild(div);
+        win.scrollTop = win.scrollHeight;
     }
 
     // --- Выбор формата ---
-    window.setFormat = (fmt) => {
+    function setFormat(fmt) {
         outputFormat = fmt;
-        document.getElementById('btnVert').classList.toggle('active', fmt === 'vertical');
-        document.getElementById('btnHoriz').classList.toggle('active', fmt === 'horizontal');
+        document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`btn-${fmt}`).classList.add('active');
         log(`Формат изменен на: ${fmt === 'vertical' ? 'Вертикальный (TikTok)' : 'Горизонтальный (YouTube)'}`);
-    };
+    }
 
     // --- Загрузка файла ---
-    dropZone.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
-    
-    // Drag & Drop
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('active');
-        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            selectedFile = e.target.files[0];
+            document.getElementById('fileName').innerText = selectedFile.name;
+            document.getElementById('startBtn').classList.add('ready');
+            log(`Файл загружен: ${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`, 'success');
+        }
     });
 
-    function handleFile(file) {
-        if (!file || !file.type.startsWith('video/')) {
-            alert('Пожалуйста, выберите видеофайл.');
-            return;
-        }
-        selectedFile = file;
-        statusCard.style.display = 'block';
-        resultCard.style.display = 'none';
-        clipsList.innerHTML = '';
-        generatedClips = [];
-        downloadZipBtn.style.display = 'none';
+    // --- Анализ видео (FaceAPI) ---
+    async function analyzeVideoSegments(videoElement) {
+        log('Загрузка нейросетей лица...', 'info');
         
-        log(`Файл загружен: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`);
-        log('Готов к обработке.', 'ok');
-        processBtn.classList.add('ready');
-        processBtn.innerText = '✂️ Начать умную нарезку';
+        // Ждем загрузки моделей face-api
+        await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+        await faceapi.nets.faceExpressionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+        
+        log('Нейросети готовы. Сканирование видео...', 'info');
+
+        const duration = videoElement.duration;
+        const segmentDuration = 3; // Проверяем каждые 3 секунды
+        const goodSegments = [];
+        
+        const canvas = document.getElementById('hiddenCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 320; // Уменьшаем для скорости
+        canvas.height = 320 * (videoElement.videoHeight / videoElement.videoWidth);
+
+        let currentTime = 0;
+        
+        // Пропускаем видео быстро, проверяя кадры
+        while (currentTime < duration) {
+            videoElement.currentTime = currentTime;
+            
+            // Ждем обновления кадра
+            await new Promise(r => {
+                const onSeeked = () => {
+                    videoElement.removeEventListener('seeked', onSeeked);
+                    r();
+                };
+                videoElement.addEventListener('seeked', onSeeked);
+            });
+
+            // Рисуем кадр на канвас
+            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            
+            // Детекция
+            const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions();
+            
+            if (detections.length > 0) {
+                // Если есть лицо, проверяем эмоции
+                const expressions = detections[0].expressions;
+                const neutralScore = expressions.neutral;
+                const happyScore = expressions.happy;
+                const surprisedScore = expressions.surprised;
+
+                // Логика: если лицо есть и оно не слишком скучное (нейтральность < 0.8) или счастливое
+                if (happyScore > 0.1 || surprisedScore > 0.1 || neutralScore < 0.85) {
+                    goodSegments.push({ start: currentTime, score: happyScore + surprisedScore });
+                    log(`Найден момент: ${currentTime.toFixed(1)}с (Эмоции активны)`);
+                }
+            }
+
+            currentTime += segmentDuration;
+            
+            // Оптимизация: не сканируем бесконечно долго для демо
+            if (currentTime > 120) { 
+                log('Достигнут лимит анализа (2 мин) для ускорения.', 'warn');
+                break; 
+            }
+        }
+
+        return goodSegments;
     }
 
     // --- Основной процесс ---
-    processBtn.addEventListener('click', async () => {
+    async function startProcess() {
         if (!selectedFile) return;
+
+        const btn = document.getElementById('startBtn');
+        const btnText = btn.querySelector('.btn-text');
+        const loader = document.getElementById('btnLoader');
         
-        processBtn.classList.remove('ready');
-        processBtn.innerHTML = '<span class="loader"></span> Обработка...';
-        resultCard.style.display = 'none';
+        btnText.style.display = 'none';
+        loader.style.display = 'block';
+        btn.disabled = true;
 
         try {
             // 1. Инициализация FFmpeg
             if (!ffmpeg.isLoaded()) {
-                log('Загрузка движка монтажа...', 'warn');
+                log('Инициализация видеоядра...', 'info');
                 await ffmpeg.load();
-                log('Движок готов.', 'ok');
             }
 
-            // 2. Загрузка видео в память FFmpeg
-            log('Чтение видео файла...');
+            // 2. Подготовка видео
+            log('Подготовка видеофайла...', 'info');
             ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(selectedFile));
 
-            // 3. Анализ видео (Поиск сцен с лицами)
-            // Для скорости анализируем каждый 30-й кадр (примерно 1 раз в секунду)
-            log('Запуск AI анализа лиц...', 'warn');
-            await analyzeVideoForFaces();
-
-            // 4. Нарезка на клипы
-            log('Нарезка лучших моментов...');
-            await cutClips();
-
-            // 5. Финал
-            log('Все клипы готовы!', 'ok');
-            showResults();
-
-        } catch (error) {
-            console.error(error);
-            log(`Ошибка: ${error.message}`, 'warn');
-            alert('Произошла ошибка при обработке. Попробуйте видео меньшего размера.');
-        } finally {
-            processBtn.classList.add('ready');
-            processBtn.innerText = '✂️ Повторить обработку';
-        }
-    });
-
-    // --- AI Анализ (FaceAPI) ---
-    let goodSegments = []; // {start, end, score}
-
-    async function analyzeVideoForFaces() {
-        // Загрузка моделей face-api
-        await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-        await faceapi.nets.faceExpressionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-
-        videoEl.src = URL.createObjectURL(selectedFile);
-        videoEl.muted = true;
-        await new Promise(r => videoEl.onloadeddata = r);
-
-        const duration = videoEl.duration;
-        const step = 2.0; // Шаг анализа 2 секунды (для скорости на телефоне)
-        const totalSteps = Math.floor(duration / step);
-        
-        goodSegments = [];
-        let currentSegmentStart = null;
-        let consecutiveFrames = 0;
-
-        log(`Анализ ${totalSteps} точек видео...`);
-
-        for (let i = 0; i < totalSteps; i++) {
-            const time = i * step;
-            videoEl.currentTime = time;
-            await new Promise(r => videoEl.onseeked = r);
-
-            // Рисуем кадр на канвас
-            canvas.width = videoEl.videoWidth;
-            canvas.height = videoEl.videoHeight;
-            ctx.drawImage(videoEl, 0, 0);
-
-            // Детекция
-            const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions();
-
-            if (detections.length > 0) {
-                // Нашли лицо! Проверяем эмоции (если есть улыбка или нейтрально - хорошо)
-                // Для простоты считаем наличие лица хорошим признаком
-                if (!currentSegmentStart) {
-                    currentSegmentStart = time;
-                }
-                consecutiveFrames++;
-            } else {
-                // Лица нет
-                if (currentSegmentStart !== null && consecutiveFrames >= 2) {
-                    // Сохраняем сегмент, если лицо было видно хотя бы 2 шага (4 сек)
-                    goodSegments.push({
-                        start: currentSegmentStart,
-                        end: time,
-                        duration: time - currentSegmentStart
-                    });
-                }
-                currentSegmentStart = null;
-                consecutiveFrames = 0;
-            }
+            // 3. Анализ контента (AI)
+            const videoEl = document.getElementById('hiddenVideo');
+            videoEl.src = URL.createObjectURL(selectedFile);
+            await new Promise(r => videoEl.onloadeddata = r);
             
-            // Прогресс
-            if (i % 5 === 0) log(`Анализ: ${Math.round((i/totalSteps)*100)}%`);
-        }
-        
-        // Проверка последнего сегмента
-        if (currentSegmentStart !== null && consecutiveFrames >= 2) {
-            goodSegments.push({ start: currentSegmentStart, end: duration, duration: duration - currentSegmentStart });
-        }
+            const segments = await analyzeVideoSegments(videoEl);
+            
+            if (segments.length === 0) {
+                throw new Error('Лица не найдены или видео слишком темное/статичное.');
+            }
 
-        log(`Найдено ${goodSegments.length} потенциальных сцен с лицом.`, 'ok');
-        
-        // Ограничиваем количество клипов, чтобы телефон не завис (макс 5 клипов по 60 сек)
-        if (goodSegments.length > 5) {
-            goodSegments = goodSegments.slice(0, 5);
-            log('Выбраны топ-5 лучших сцен для нарезки.', 'warn');
-        }
-    }
+            // 4. Генерация клипов
+            log(`Найдено ${segments.length} перспективных моментов. Нарезка...`, 'info');
+            generatedClips = [];
+            const zip = new JSZip();
+            
+            // Параметры кропа
+            let filterComplex = '';
+            let outputSize = '';
+            
+            if (outputFormat === 'vertical') {
+                // Crop to center vertical 9:16
+                filterComplex = 'crop=ih*(9/16):ih'; 
+                outputSize = '720x1280';
+            } else {
+                // Just scale to 720p horizontal
+                filterComplex = 'scale=1280:720';
+                outputSize = '1280x720';
+            }
 
-    // --- Нарезка через FFmpeg ---
-    async function cutClips() {
-        generatedClips = [];
-        const maxClipDuration = 59; // Макс длина клипа 59 сек (для TikTok/Shorts)
-
-        for (let i = 0; i < goodSegments.length; i++) {
-            const seg = goodSegments[i];
-            log(`Обработка клипа ${i+1}/${goodSegments.length}...`);
-
-            let clipDuration = seg.duration;
-            let startTime = seg.start;
-
-            // Если сегмент слишком длинный, режем его на части по 60 сек
-            while (clipDuration > 0) {
-                const currentLen = Math.min(clipDuration, maxClipDuration);
-                const outputName = `clip_${i+1}_${Math.floor(startTime)}.mp4`;
-
-                // Команда FFmpeg
-                // 1. Trim (вырезать время)
-                // 2. Scale/Crop (под формат)
-                let filterComplex = '';
+            for (let i = 0; i < segments.length; i++) {
+                const seg = segments[i];
+                const clipName = `clip_${i+1}.mp4`;
+                const duration = 15; // Длительность одного клипа 15 сек
                 
-                if (outputFormat === 'vertical') {
-                    // Кроп центра для вертикали
-                    filterComplex = 'crop=min(iw\,ih):min(iw\,ih),scale=720:1280,pad=720:1280:(ow-iw)/2:(oh-ih)/2:black';
-                } else {
-                    // Просто скейл для горизонтали
-                    filterComplex = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black';
-                }
+                log(`Обработка клипа ${i+1} (начало: ${seg.start.toFixed(1)}с)...`, 'info');
 
-                // Добавляем аудио и видео фильтры
-                // -ss начало, -t длительность
+                // Команда FFmpeg: вырезать кусок, обрезать под формат, улучшить цвет
                 await ffmpeg.run(
+                    '-ss', seg.start.toString(),
+                    '-t', duration.toString(),
                     '-i', 'input.mp4',
-                    '-ss', startTime.toString(),
-                    '-t', currentLen.toString(),
-                    '-vf', filterComplex,
+                    '-vf', `${filterComplex},eq=brightness=0.05:saturation=1.1`, // Легкий люк
                     '-c:v', 'libx264',
-                    '-preset', 'ultrafast', // Быстрее для мобильных
+                    '-preset', 'ultrafast', // Быстрее для браузера
                     '-c:a', 'aac',
-                    outputName
+                    clipName
                 );
 
-                // Читаем результат
-                const data = ffmpeg.FS('readFile', outputName);
-                const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                const data = ffmpeg.FS('readFile', clipName);
                 
-                generatedClips.push({
-                    name: outputName,
-                    blob: blob,
-                    url: URL.createObjectURL(blob)
-                });
+                // Сохраняем в массив для превью первого
+                if (i === 0) {
+                    const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                    const url = URL.createObjectURL(blob);
+                    document.getElementById('previewVideo').src = url;
+                    document.getElementById('downloadSingleBtn').href = url;
+                    document.getElementById('downloadSingleBtn').download = 'best_moment.mp4';
+                }
 
-                // Очищаем память FFmpeg
-                ffmpeg.FS('unlink', outputName);
-
-                clipDuration -= currentLen;
-                startTime += currentLen;
+                // Добавляем в ZIP
+                zip.file(clipName, data);
+                generatedClips.push(data);
                 
-                if (clipDuration > 0) log(`Клип ${i+1} длинный, создаю часть...`);
+                // Чистим память FFmpeg
+                ffmpeg.FS('unlink', clipName);
             }
+
+            // 5. Финал
+            log('Упаковка архива...', 'success');
+            const content = await zip.generateAsync({ type: "blob" });
+            const zipUrl = URL.createObjectURL(content);
+            
+            const zipBtn = document.getElementById('downloadZipBtn');
+            zipBtn.href = zipUrl;
+            zipBtn.download = "smart_edits.zip";
+
+            document.getElementById('clipCount').innerText = segments.length;
+            document.getElementById('resultArea').style.display = 'flex';
+            log('Монтаж завершен! Скачивайте файлы.', 'success');
+
+        } catch (err) {
+            console.error(err);
+            log(`Ошибка: ${err.message}`, 'error');
+            if (err.message.includes('SharedArrayBuffer')) {
+                log('Критическая ошибка браузера. Попробуйте Chrome на ПК.', 'error');
+            }
+        } finally {
+            btnText.style.display = 'block';
+            loader.style.display = 'none';
+            btn.disabled = false;
         }
     }
-
-    function showResults() {
-        resultCard.style.display = 'block';
-        clipsList.innerHTML = '';
-        
-        generatedClips.forEach((clip, idx) => {
-            const div = document.createElement('div');
-            div.className = 'clip-item';
-            div.innerHTML = `
-                <video src="${clip.url}" controls></video>
-                <div class="clip-info">Клип #${idx+1}</div>
-            `;
-            clipsList.appendChild(div);
-        });
-
-        downloadZipBtn.style.display = 'block';
-        window.scrollTo(0, document.body.scrollHeight);
-    }
-
-    // --- Скачивание ZIP ---
-    downloadZipBtn.addEventListener('click', () => {
-        const zip = new JSZip();
-        const folder = zip.folder("smart_editor_clips");
-        
-        generatedClips.forEach(clip => {
-            folder.file(clip.name, clip.blob);
-        });
-
-        log('Упаковка архива...');
-        zip.generateAsync({type:"blob"}).then(function(content) {
-            saveAs(content, "my_smart_clips.zip");
-            log('Архив скачан!', 'ok');
-        });
-    });
-
 </script>
+
 </body>
 </html>
