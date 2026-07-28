@@ -122,7 +122,7 @@
     </div>
 
     <div class="status-box">
-        🔒 <b>Локальный режим:</b> Нейросеть работает внутри браузера. Ключи не нужны.
+        🔒 <b>Локальный режим:</b> Нейросеть работает внутри браузера. Ключи не нужны. Данные никуда не отправляются.
     </div>
 
     <div class="card">
@@ -147,8 +147,8 @@
 <!-- Скрытые элементы -->
 <video id="hiddenVideo" muted playsinline crossorigin="anonymous"></video>
 
-<!-- Подключаем обновленную библиотеку -->
-<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.min.js"></script>
+<!-- Используем стабильную версию библиотеки -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
 <script>
     const fileInput = document.getElementById('fileInput');
@@ -156,10 +156,10 @@
     const logs = document.getElementById('logs');
     const videoPlayer = document.getElementById('hiddenVideo');
 
-    // 1. НОВАЯ ССЫЛКА НА МОДЕЛИ (она рабочая)
-    const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/weights';
+    // 🔥 НОВЫЙ НАДЕЖНЫЙ CDN ДЛЯ МОДЕЛЕЙ
+    const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights/';
 
-    addLog("🔄 Скачиваем нейросети (это может занять 30 сек)...", "log-process");
+    addLog("🔄 Скачиваем нейросети (CDN jsDelivr)...", "log-process");
 
     // Загружаем модели
     Promise.all([
@@ -167,11 +167,11 @@
         faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
         faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
     ]).then(() => {
-        addLog("✅ УСПЕХ! Нейросети загружены и готовы.", "log-success");
-        fileInput.disabled = false; // Разблокируем кнопку
+        addLog("✅ УСПЕХ! Нейросети загружены и готовы к работе.", "log-success");
+        fileInput.disabled = false; 
     }).catch(err => {
         addLog("❌ Ошибка загрузки: " + err, "log-error");
-        addLog("Попробуйте обновить страницу (Ctrl+F5)", "log-error");
+        addLog("💡 Если ошибка повторится, отключите AdBlock/расширения конфиденциальности и обновите страницу (Ctrl+F5)", "log-error");
     });
 
     // Отображение списка файлов
@@ -206,7 +206,7 @@
         // Проверяем 3 момента: 1 сек, середина, конец
         const timePoints = [1, duration/2, duration-2].filter(t => t > 1 && t < duration);
         
-        addLog(`🎬 Сканируем ${timePoints.length} моментов...`, "log-process");
+        addLog(`🎬 Сканируем ${timePoints.length} ключевых моментов...`, "log-process");
 
         for (let time of timePoints) {
             videoPlayer.currentTime = time;
@@ -233,12 +233,12 @@
                     }
                 });
             } else {
-                addLog(`⚪ Кадр ${time.toFixed(1)}с: Лиц нет.`, "log-process");
+                addLog(`⚪ Кадр ${time.toFixed(1)}с: Лиц не обнаружено.`, "log-process");
             }
-            await new Promise(r => setTimeout(r, 500)); // Пауза
+            await new Promise(r => setTimeout(r, 500)); // Пауза для стабильности
         }
 
-        addLog("✅ Готово!", "log-success");
+        addLog("✅ Сканирование завершено!", "log-success");
         processBtn.innerText = "Готово!";
         processBtn.disabled = false;
         
@@ -248,7 +248,7 @@
     function translateEmotion(en) {
         const dict = {
             'neutral': 'Нейтрально',
-            'happiness': 'Радость',
+            'happiness': 'Радость/Смех',
             'sadness': 'Грусть',
             'anger': 'Злость',
             'fear': 'Страх',
