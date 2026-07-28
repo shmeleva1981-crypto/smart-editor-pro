@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartEditor Pro | Real AI Analysis</title>
+    <title>SmartEditor Pro | Local AI</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -50,17 +50,14 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Настройки API */
-        .api-box {
+        .status-box {
             background: #151525;
             padding: 15px;
             border-radius: 10px;
             border: 1px solid #333;
+            font-size: 12px;
+            color: var(--text-muted);
         }
-        .api-box label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 5px; }
-        .api-input { width: 100%; background: #0f0f1a; border: 1px solid #444; padding: 10px; border-radius: 6px; color: #fff; font-family: monospace; box-sizing: border-box; }
-        
-        .sub-note { font-size: 10px; color: #666; margin-top: 5px; }
 
         .card {
             background-color: var(--card-bg);
@@ -99,24 +96,7 @@
 
         #fileInput { display: none; }
         #hiddenVideo { display: none; }
-
-        .file-list {
-            text-align: left;
-            margin-top: 10px;
-            max-height: 150px;
-            overflow-y: auto;
-            border-top: 1px solid #333;
-            padding-top: 10px;
-        }
-        .file-item {
-            background: #252540;
-            padding: 8px 12px;
-            border-radius: 6px;
-            margin-bottom: 5px;
-            font-size: 12px;
-            display: flex;
-            justify-content: space-between;
-        }
+        #previewCanvas { display: none; }
 
         .log-area {
             background: #111;
@@ -139,73 +119,68 @@
 
 <div class="app-container">
     <div class="header">
-        <div class="brand">SmartEditor <span style="font-size: 10px; opacity: 0.7;">PRO</span></div>
+        <div class="brand">SmartEditor <span style="font-size: 10px; opacity: 0.7;">LOCAL AI</span></div>
     </div>
 
-    <div class="api-box">
-        <label>🔑 Твой ключ от Hugging Face (начинается на hf_...):</label>
-        <input type="text" id="apiKey" class="api-input" placeholder="hf_...">
-        <div class="sub-note">Бесплатный ключ с huggingface.co/settings/tokens</div>
+    <div class="status-box">
+        🔒 <b>Локальный режим:</b> Нейросеть работает внутри твоего браузера. Ключи не нужны. Данные никуда не отправляются.
     </div>
 
     <div class="card">
         <div class="upload-area" onclick="document.getElementById('fileInput').click()">
             <div style="font-size: 30px;">📂</div>
             <h3>Загрузить видео</h3>
-            <span class="sub-text">ИИ проанализирует эмоции по кадрам</span>
+            <span class="sub-text">Будем искать лица и эмоции</span>
         </div>
         
         <input type="file" id="fileInput" accept="video/*">
-        
-        <div id="fileListContainer" style="display:none;">
-            <p class="sub-text">Файлов: <span id="fileCount" class="file-count" style="color:var(--accent-green); font-weight:bold;">0</span></p>
-            <div class="file-list" id="fileList"></div>
-        </div>
         <br>
-        <button id="processBtn" class="btn-action" disabled onclick="processBatch()">
-            🧠 Анализировать
+        <button id="processBtn" class="btn-action" disabled onclick="analyzeLocal()">
+            🧠 Анализировать (Локально)
         </button>
     </div>
 
     <div class="log-area" id="logs">
-        > Система готова. Введите API ключ и загрузите файлы...
+        > Система готова.
     </div>
 </div>
 
-<video id="hiddenVideo" muted playsinline></video>
-<canvas id="captureCanvas" style="display:none;"></canvas>
+<!-- Скрытые элементы для обработки -->
+<video id="hiddenVideo" muted playsinline crossorigin="anonymous"></video>
+<canvas id="previewCanvas"></canvas>
+
+<!-- Подключаем библиотеку Face-API.js прямо из браузера -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.js"></script>
 
 <script>
     const fileInput = document.getElementById('fileInput');
     const processBtn = document.getElementById('processBtn');
     const logs = document.getElementById('logs');
-    const apiKeyInput = document.getElementById('apiKey');
-    const fileListContainer = document.getElementById('fileListContainer');
-    const fileListDiv = document.getElementById('fileList');
-    const fileCountSpan = document.getElementById('fileCount');
     const videoPlayer = document.getElementById('hiddenVideo');
-    const canvas = document.getElementById('captureCanvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.getElementById('previewCanvas');
+
+    // 1. Загрузка "Мозгов" (Моделей) при старте страницы
+    const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+    
+    addLog("🔄 Загрузка нейросетей (первый раз это занимает время)...", "log-process");
+
+    Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+        faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+    ]).then(() => {
+        addLog("✅ Нейросети загружены! Мозги готовы к работе.", "log-success");
+        // Включаем кнопку выбора файла, когда модели готовы
+        fileInput.disabled = false; 
+    }).catch(err => {
+        addLog("❌ Ошибка загрузки моделей: " + err, "log-error");
+    });
 
     // Отображение списка файлов
     fileInput.addEventListener('change', function() {
-        const files = this.files;
-        fileListDiv.innerHTML = '';
-        if (files.length > 0) {
-            fileListContainer.style.display = 'block';
+        if (this.files.length > 0) {
             processBtn.disabled = false;
-            fileCountSpan.innerText = files.length;
-            for (let i = 0; i < files.length; i++) {
-                const item = document.createElement('div');
-                item.className = 'file-item';
-                let name = files[i].name.length > 25 ? files[i].name.substring(0, 20) + '...' : files[i].name;
-                item.innerHTML = `<span>📄 ${name}</span> <span>${(files[i].size / 1024 / 1024).toFixed(1)} MB</span>`;
-                fileListDiv.appendChild(item);
-            }
-            addLog(`✅ Выбрано: ${files.length} файлов.`);
-        } else {
-            fileListContainer.style.display = 'none';
-            processBtn.disabled = true;
+            addLog(`📂 Файл выбран: ${this.files[0].name}`);
         }
     });
 
@@ -217,132 +192,81 @@
         logs.scrollTop = logs.scrollHeight;
     }
 
-    async function processBatch() {
-        const apiKey = apiKeyInput.value.trim();
-        if (!apiKey) {
-            addLog("❌ ОШИБКА: Введите API ключ!", "log-error");
-            return;
-        }
-
+    // === АНАЛИЗ В БРАУЗЕРЕ ===
+    async function analyzeLocal() {
         processBtn.disabled = true;
-        processBtn.innerText = "⏳ ИИ смотрит видео...";
-        addLog("🚀 Запуск реального анализа...");
-
-        const file = fileInput.files[0]; // Берем первый файл для теста
-        addLog(`🔄 Обработка: ${file.name}...`);
-
-        try {
-            await analyzeVideoReal(file, apiKey);
-            addLog("✅ Готово! Смотрите результаты в логах.", "log-success");
-        } catch (error) {
-            addLog(`❌ Ошибка: ${error.message}`, "log-error");
-        }
+        processBtn.innerText = "🧠 Думаю...";
         
-        processBtn.innerText = "Готово!";
-        processBtn.disabled = false;
-    }
-
-    // === РЕАЛЬНЫЙ АНАЛИЗ ВИДЕО ===
-    async function analyzeVideoReal(file, apiKey) {
-        addLog("🎬 1. Раскадровываем видео (выбираем ключевые моменты)...", "log-process");
-        
+        const file = fileInput.files[0];
         const url = URL.createObjectURL(file);
         videoPlayer.src = url;
+
+        // Ждем, пока видео загрузится
         await new Promise(r => videoPlayer.onloadedmetadata = r);
-
-        const duration = videoPlayer.duration;
-        // Берем 3 кадра: Начало, Середина, Конец
-        const timePoints = [2, duration / 2, duration - 2]; 
-        const frames = [];
-
-        for (let t of timePoints) {
-            if (t < 0 || t > duration) continue;
-            await seekTo(videoPlayer, t);
-            
-            // Рисуем кадр
-            canvas.width = videoPlayer.videoWidth;
-            canvas.height = videoPlayer.videoHeight;
-            ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
-            
-            // Конвертируем в Blob для отправки
-            frames.push({
-                time: t,
-                blob: await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9))
-            });
-            addLog(`   > Кадр ${t.toFixed(1)}с готов.`);
-        }
         
-        URL.revokeObjectURL(url);
-        videoPlayer.src = "";
-        addLog(`✨ Выбрано ${frames.length} кадров для анализа.`, "log-success");
+        const duration = videoPlayer.duration;
+        // Выбираем кадры для анализа (начало, середина, конец)
+        const timePoints = [1, duration/2, duration-1].filter(t => t > 0 && t < duration);
+        
+        addLog(`🎬 Начинаем сканирование ${timePoints.length} ключевых моментов...`, "log-process");
 
-        // === ОТПРАВКА В НЕЙРОСЕТЬ ===
-        // Модель: LLaVA (одна из лучших для понимания контекста)
-        // URL API Inference Hugging Face
-        const apiUrl = "https://api-inference.huggingface.co/models/llava-hf/llava-1.5-7b-hf";
+        let happyCount = 0;
 
-        for (let i = 0; i < frames.length; i++) {
-            addLog(`🧠 2. Отправляем кадр (${frames[i].time.toFixed(1)}с) в LLaVA...`, "log-process");
-            
-            try {
-                // Формируем промпт для ИИ
-                // Мы просим его ответить на конкретный вопрос, чтобы получить структурированный ответ
-                const prompt = `Describe this image. Is there any human emotion visible? What is the mood? (Answer in English)`;
+        for (let time of timePoints) {
+            // Перемотка
+            videoPlayer.currentTime = time;
+            await new Promise(r => videoPlayer.onseeked = r);
+
+            // Анализ кадра
+            // detectAllFaces с опциями для экономии ресурсов
+            const detection = await faceapi.detectAllFaces(videoPlayer, new faceapi.TinyFaceDetectorOptions())
+                .withFaceExpressions()
+                .withAgeAndGender();
+
+            if (detection.length > 0) {
+                addLog(`📸 В момент ${time.toFixed(1)}с найдены лица!`, "log-success");
                 
-                // Отправляем запрос
-                // ВАЖНО: Inference API принимает бинарные данные картинки в теле запроса
-                const response = await fetch(apiUrl, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${apiKey}`,
-                        "Content-Type": "application/octet-stream" // Отправляем "сырую" картинку
-                    },
-                    body: frames[i].blob
-                });
+                detection.forEach(det => {
+                    // Находим самую сильную эмоцию
+                    const emotions = det.expressions;
+                    // Сортируем эмоции по силе проявления
+                    const strongestEmotion = Object.keys(emotions).sort((a, b) => emotions[b] - emotions[a])[0];
+                    const percentage = Math.round(emotions[strongestEmotion] * 100);
 
-                // LLaVA в Inference API работает немного специфично. 
-                // Она генерирует текст. Но нам нужно передать промпт.
-                // Для модели llava-1.5-7b на Inference API промпт часто нужно передавать в JSON, если модель поддерживает conversational pipeline.
-                // Но самый надежный способ для бесплатного API - это просто отправить картинку, и модель вернет описание.
-                
-                // Проверка ответа
-                if (!response.ok) {
-                    const errText = await response.text();
-                    // Если ошибка "loading model", ждем и пробуем снова (холодный старт сервера)
-                    if (errText.includes("loading")) {
-                        addLog("⏳ Нейросеть загружается (первый раз)... Ждем...", "log-process");
-                        await new Promise(r => setTimeout(r, 20000)); // Ждем 20 сек
-                        // Повторный запрос (тут упрощено, в реальном проекте нужен цикл)
-                    } else {
-                        throw new Error(`API Error: ${errText}`);
+                    addLog(`👤 Эмоция: ${translateEmotion(strongestEmotion)} (${percentage}%)`, "log-ai");
+
+                    if (strongestEmotion === 'happy' && percentage > 70) {
+                        happyCount++;
+                        addLog(`🔥 НАЙДЕН СМЕХ/РАДОСТЬ!`, "log-success");
                     }
-                }
-
-                const data = await response.json();
-                // В ответе LLaVA обычно массив с generated_text
-                let aiText = "Нет ответа.";
-                if (Array.isArray(data) && data[0].generated_text) {
-                    aiText = data[0].generated_text;
-                } else if (typeof data === 'object' && data.error) {
-                     throw new Error(data.error);
-                }
-
-                addLog(`✅ ИИ проанализировал ${frames[i].time.toFixed(1)}с:`, "log-success");
-                addLog(`"${aiText.substring(0, 100)}..."`, "log-ai");
-
-            } catch (e) {
-                addLog(`❌ Не удалось проанализировать кадр: ${e.message}`, "log-error");
+                });
+            } else {
+                addLog(`⚪ В момент ${time.toFixed(1)}с лиц не найдено.`, "log-process");
             }
             
-            await new Promise(r => setTimeout(r, 1000)); // Пауза
+            // Небольшая пауза для плавности
+            await new Promise(r => setTimeout(r, 500));
         }
+
+        addLog("✅ Сканирование завершено!", "log-success");
+        processBtn.innerText = "Готово!";
+        processBtn.disabled = false;
+        
+        URL.revokeObjectURL(url);
     }
 
-    function seekTo(video, time) {
-        return new Promise(resolve => {
-            video.currentTime = Math.min(time, video.duration - 0.1);
-            video.onseeked = resolve;
-        });
+    // Перевод эмоций для удобства
+    function translateEmotion(en) {
+        const dict = {
+            'neutral': 'Нейтрально',
+            'happiness': 'Радость/Смех',
+            'sadness': 'Грусть',
+            'anger': 'Злость',
+            'fear': 'Страх',
+            'disgust': 'Отвращение',
+            'surprise': 'Удивление'
+        };
+        return dict[en] || en;
     }
 </script>
 
